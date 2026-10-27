@@ -1,0 +1,97 @@
+[
+  {
+    "id": "SYN-001",
+    "note": "Unambiguous US date",
+    "source": {
+      "claim_no": "00037311",
+      "member_ref": "SYN-M101",
+      "service_date": "10/15/2025",
+      "gross_cents": "25000",
+      "allowed_cents": "22000",
+      "net_cents": "20000"
+    },
+    "expected": {
+      "claim_id": "00037311",
+      "member_id": "SYN-M101",
+      "service_date": "2025-10-15",
+      "billed_cents": 25000,
+      "paid_cents": 20000
+    }
+  },
+  {
+    "id": "SYN-002",
+    "note": "Ambiguous month/day",
+    "source": {
+      "claim_no": "00012345",
+      "member_ref": "SYN-M102",
+      "service_date": "02/03/2025",
+      "gross_cents": "95000",
+      "allowed_cents": "75000",
+      "net_cents": "50000"
+    },
+    "expected": {
+      "claim_id": "00012345",
+      "member_id": "SYN-M102",
+      "service_date": "2025-02-03",
+      "billed_cents": 95000,
+      "paid_cents": 50000
+    }
+  },
+  {
+    "id": "SYN-003",
+    "note": "Cent precision",
+    "source": {
+      "claim_no": "00061463",
+      "member_ref": "SYN-M103",
+      "service_date": "03/04/2025",
+      "gross_cents": "125050",
+      "allowed_cents": "100000",
+      "net_cents": "85025"
+    },
+    "expected": {
+      "claim_id": "00061463",
+      "member_id": "SYN-M103",
+      "service_date": "2025-03-04",
+      "billed_cents": 125050,
+      "paid_cents": 85025
+    }
+  },
+  {
+    "id": "SYN-004",
+    "note": "Zero paid value",
+    "source": {
+      "claim_no": "00000720",
+      "member_ref": "SYN-M104",
+      "service_date": "11/12/2025",
+      "gross_cents": "7500",
+      "allowed_cents": "6500",
+      "net_cents": "0"
+    },
+    "expected": {
+      "claim_id": "00000720",
+      "member_id": "SYN-M104",
+      "service_date": "2025-11-12",
+      "billed_cents": 7500,
+      "paid_cents": 0
+    }
+  },
+  {
+    "id": "SYN-005",
+    "note": "Matching allowed and paid",
+    "source": {
+      "claim_no": "00000108",
+      "member_ref": "SYN-M105",
+      "service_date": "12/31/2025",
+      "gross_cents": "9999",
+      "allowed_cents": "9999",
+      "net_cents": "9999"
+    },
+    "expected": {
+      "claim_id": "00000108",
+      "member_id": "SYN-M105",
+      "service_date": "2025-12-31",
+      "billed_cents": 9999,
+      "paid_cents": 9999
+    }
+  }
+]

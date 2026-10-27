@@ -1,0 +1,32 @@
+{
+  "schema": "amera-adapter-lab.contract.v1",
+  "adapter": "Harbor TPA / synthetic CSV",
+  "mapping": {
+    "version": "harbor-v2",
+    "idMode": "string",
+    "dateFormat": "MM/DD/YYYY",
+    "moneyEncoding": "cents",
+    "billedSource": "gross_cents",
+    "paidSource": "net_cents"
+  },
+  "targetSchema": {
+    "claim_id": "string",
+    "member_id": "string",
+    "service_date": "YYYY-MM-DD",
+    "billed_cents": "integer",
+    "paid_cents": "integer"
+  },
+  "verification": {
+    "runAt": "2026-10-27T18:02:23.275Z",
+    "fixtureIds": [
+      "SYN-001",
+      "SYN-002",
+      "SYN-003",
+      "SYN-004",
+      "SYN-005"
+    ],
+    "passed": 5,
+    "total": 5
+  },
+  "scope": "Synthetic regression fixture agreement only. Not production certification or an Amera schema."
+}

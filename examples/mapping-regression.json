@@ -1,0 +1,8 @@
+{
+  "version": "harbor-v2",
+  "idMode": "number",
+  "dateFormat": "DD/MM/YYYY",
+  "moneyEncoding": "dollars",
+  "billedSource": "gross_cents",
+  "paidSource": "allowed_cents"
+}

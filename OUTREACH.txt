@@ -1,0 +1,11 @@
+Subject: built a claims replay
+
+Hi,
+
+Amera’s custom-format mappings got me thinking about silent regressions between schema versions. I built Adapter Lab: synthetic claim replays that catch cents/dollar errors, date swaps, and incorrect paid-field mappings, with field-level diffs and a reviewable mapping contract.
+
+https://github.com/elprofessor-15/amera-adapter-lab
+
+I’m Abhineeth, a fourth-year IIT BHU undergraduate seeking a paid remote internship. I’d love to contribute to Amera’s infrastructure. Would this help your integration workflow?
+
+Resume: https://drive.google.com/file/d/1PWgVhgMRo2GYhCZ7ezYSrYAAMGfb489Q/view?usp=sharing
