@@ -6,7 +6,7 @@ A source field containing `25000` can mean $250.00 or $25,000.00. An allowed amo
 
 Adapter Lab replays synthetic source fixtures against explicitly supplied expected outputs, shows field-level differences and source provenance, and permits mapping-contract export only when the current configuration agrees with every selected fixture.
 
-![Mapping replay](screenshots/01-mapping-regression.jpg)
+![Change review](screenshots/refined/01-change-review.jpg)
 
 ## Run
 
@@ -25,16 +25,22 @@ npm run build
 npm run replay
 ```
 
-## Try the complete workflow
+## The refined workflow
 
-1. Start with the deliberately broken mapping. Five fixtures fail with 20 field differences.
-2. Inspect a fixture: a leading-zero identifier, a date interpreted with the wrong convention, cents interpreted as dollars, and allowed amount mapped into paid amount.
-3. Click **Load corrected mapping**, then **Run replay**. All five fixtures pass.
-4. Open **Verification record** and export the mapping contract or replay report.
-5. Change a mapping setting. The previous passing result becomes stale and contract export is blocked until a fresh replay passes.
-6. In **Fixture library**, edit the synthetic JSON to add or alter a source/expected-output pair. Duplicate fixture IDs, unsupported fields, invalid expected dates, non-integer expected cents, and non-synthetic member references are rejected. Fixture edits invalidate the prior result.
+The primary view is a change review, not a grid of unexplained test failures.
 
-Configuration and fixtures persist in localStorage. A replay is recomputed from that configuration when the app loads. There is no durable run-history database.
+1. Compare the bundled `harbor-v1` reference with a deliberately changed `harbor-v2` candidate.
+2. Inspect **four changed rules**, rather than diagnose 20 differences from scratch. Each rule shows its reference setting, candidate setting, and the outputs affected by restoring just that rule. Counts overlap when rules affect the same fields.
+3. Follow a record from its raw source through the reference output to the candidate output, alongside the explicit expected value. For example, after fixing money scale, allowed amount is still $220.00 where paid amount should be $200.00.
+4. Use **Apply rule & replay** to restore one reference rule. The money correction takes the sample from 20 to 14 differences. Restoring the remaining three rules produces zero differences.
+5. Each replay saves a snapshot with a run ID, configuration, source fixtures, expected values, and candidate outputs. Up to 12 runs remain available as read-only views on this browser.
+6. Open **Run record**, inspect the passing result, and record a reviewer name and note. The note is bound to this exact run and fixture/configuration identity. A fresh replay requires a fresh review, even when its configuration is identical.
+7. Export the reviewed JSON handoff. It includes the mapping, reference mapping, source fixtures, expected outputs, candidate outputs, run ID, and review. Markdown exports also include a matching review note when one exists.
+8. Use **Mapping rules** for manual configuration and **Fixture library** to edit the synthetic test set. Mapping or fixture changes invalidate the current result. A changed rule that has no observable effect on the selected fixtures is explicitly shown as a coverage gap.
+
+A reference-rule correction is a proposed restoration to the bundled reference, not an inferred fix for an unknown payer contract. Expected outputs remain explicit engineering assumptions.
+
+Configuration, fixtures, saved replay snapshots, and review notes persist in localStorage. The latest matching saved replay is restored on reload. Browser history is local and editable outside the UI; it is not a tamper-proof audit log or authenticated approval system.
 
 ## Headless replay
 
@@ -68,7 +74,8 @@ Invalid configuration or fixture input exits **2**. A GitHub Actions workflow ru
 - Per-field source names, raw values, applied transformations, expected values, and candidate outputs.
 - Editable synthetic fixture sets with validation.
 - Replay identity based on both the full configuration and fixture contents.
-- A finite-fixture export gate, JSON mapping contract, Markdown replay report, and inspectable artifact previews.
+- A current-run review gate, evidence-rich JSON handoff, Markdown replay report, and inspectable artifact previews.
+- Rule-level change analysis, individual correction/replay, source/reference/candidate traces, and saved replay history.
 - Browser-local state, responsive layouts, keyboard focus containment, and Escape dismissal.
 
 ## Why this is relevant to Amera
@@ -99,8 +106,10 @@ No application records are transmitted to a backend. Google Fonts is requested f
 - `src/engine.js`: normalization, fixtures, replay, validation, and export logic.
 - `src/main.jsx`: interactive mapping, fixture library, and verification views.
 - `scripts/replay.js`: CLI entry point.
-- `tests/engine.test.js`: eleven meaningful engine tests.
+- `tests/engine.test.js`: fifteen engine tests, including change grouping, fixture coverage gaps, and run-bound review invalidation.
+- `src/ChangeReview.jsx`: task-focused comparison and correction workflow.
+- `src/refinement.css`: responsive layout for the review and handoff.
 - `examples/`: fixture JSON, corrected and broken configurations, verification contract, and regression report.
-- `screenshots/`: three real local-browser captures.
+- `screenshots/refined/`: three current local-browser captures. The original screenshots remain in `screenshots/` for reference.
 - `VERIFICATION.md`: evidence and remaining verification limits.
 - `OUTREACH.txt`: copy-ready email with literal repository and resume URLs.

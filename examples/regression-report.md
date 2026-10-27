@@ -1,7 +1,9 @@
 # Adapter replay | Harbor TPA
 
 Mapping version: harbor-v2
-Run: 2026-10-27T18:02:23.281Z
+Run: 2026-10-27T18:24:41.012Z
+Run ID: RUN-37546DB6
+Review: not recorded for this run
 Fixtures passed: 0/5
 Field differences: 20
 Scope: synthetic regression fixtures only.

@@ -255,6 +255,7 @@ export function replay(items, config) {
   return {
     config: { ...config },
     fingerprint: signature(config, items),
+    runId: "RUN-" + crypto.randomUUID().slice(0, 8).toUpperCase(),
     runAt: new Date().toISOString(),
     cases,
     total: cases.length,
@@ -338,9 +339,9 @@ export function contract(result) {
       "Synthetic regression fixture agreement only. Not production certification or an Amera schema.",
   };
 }
-export function report(result) {
+export function report(result, review = null) {
   return (
-    `# Adapter replay | Harbor TPA\n\nMapping version: ${result.config.version}\nRun: ${result.runAt}\nFixtures passed: ${result.passed}/${result.total}\nField differences: ${result.changedFields}\nScope: synthetic regression fixtures only.\n\n` +
+    `# Adapter replay | Harbor TPA\n\nMapping version: ${result.config.version}\nRun: ${result.runAt}\nRun ID: ${result.runId}\n${review?.runId === result.runId ? `Reviewer: ${review.reviewer}\nReview note: ${review.note}\n` : "Review: not recorded for this run\n"}Fixtures passed: ${result.passed}/${result.total}\nField differences: ${result.changedFields}\nScope: synthetic regression fixtures only.\n\n` +
     result.cases
       .map(
         (c) =>
@@ -348,4 +349,129 @@ export function report(result) {
       )
       .join("\n")
   );
+}
+
+export const referenceMapping = { ...corrected, version: "harbor-v1" };
+export const mappingRules = [
+  {
+    key: "moneyEncoding",
+    title: "Money scale changed",
+    field: "billed_cents",
+    label: "Money encoding",
+    explanation:
+      "A cents value interpreted as dollars multiplies its output by 100. Both billed and paid amounts use this rule.",
+    source: "gross_cents",
+    format: (v) => (v === "cents" ? "Integer cents" : "Decimal dollars"),
+  },
+  {
+    key: "paidSource",
+    title: "Paid amount uses a different field",
+    field: "paid_cents",
+    label: "Paid amount source",
+    explanation:
+      "Allowed and paid amounts can both be valid numbers while representing different things. Check the source field, not just its numeric type.",
+    source: "net_cents",
+    format: (v) => v,
+  },
+  {
+    key: "idMode",
+    title: "Claim identifiers lose leading zeros",
+    field: "claim_id",
+    label: "Identifier handling",
+    explanation:
+      "Converting an identifier through a number changes references such as 00037311 into 37311. Preserve the identifier as supplied.",
+    source: "claim_no",
+    format: (v) => (v === "string" ? "Preserve string" : "Convert to number"),
+  },
+  {
+    key: "dateFormat",
+    title: "Service date order changed",
+    field: "service_date",
+    label: "Source date format",
+    explanation:
+      "Some swapped dates fail parsing. Others remain valid dates with a different meaning, such as February 3 becoming March 2.",
+    source: "service_date",
+    format: (v) => v,
+  },
+  {
+    key: "billedSource",
+    title: "Billed amount uses a different field",
+    field: "billed_cents",
+    label: "Billed amount source",
+    explanation:
+      "Billed, allowed, and paid are separate measures. Confirm the intended meaning of the selected source field.",
+    source: "gross_cents",
+    format: (v) => v,
+  },
+];
+export function compareRules(items, config, reference = referenceMapping) {
+  return mappingRules
+    .filter((rule) => config[rule.key] !== reference[rule.key])
+    .map((rule) => {
+      const restored = { ...config, [rule.key]: reference[rule.key] };
+      const affected = items.flatMap((item) => {
+        const before = normalize(item.source, config),
+          after = normalize(item.source, restored);
+        const changed = fields.filter(
+          (field) =>
+            before.output[field] !== after.output[field] ||
+            before.errors[field] !== after.errors[field],
+        );
+        return changed.length ? [{ id: item.id, fields: changed }] : [];
+      });
+      return {
+        ...rule,
+        before: reference[rule.key],
+        after: config[rule.key],
+        affected,
+        affectedFields: affected.reduce((n, x) => n + x.fields.length, 0),
+      };
+    });
+}
+export function acknowledgeRun(result, config, items, reviewer, note) {
+  if (result.failed || result.fingerprint !== signature(config, items))
+    throw Error(
+      "Replay the current configuration and resolve differences before recording review.",
+    );
+  if (reviewer.trim().length < 2 || note.trim().length < 12)
+    throw Error(
+      "Add a reviewer name and a meaningful note of at least 12 characters.",
+    );
+  return {
+    runId: result.runId,
+    fingerprint: result.fingerprint,
+    reviewer: reviewer.trim(),
+    note: note.trim(),
+    reviewedAt: new Date().toISOString(),
+    scope: "Reviewed for synthetic fixture agreement only.",
+  };
+}
+export function canExportReviewed(result, config, items, acknowledgement) {
+  return Boolean(
+    !result.failed &&
+    result.fingerprint === signature(config, items) &&
+    acknowledgement?.runId === result.runId &&
+    acknowledgement?.fingerprint === result.fingerprint &&
+    acknowledgement?.reviewer &&
+    acknowledgement?.note,
+  );
+}
+export function reviewedContract(result, config, items, acknowledgement) {
+  if (!canExportReviewed(result, config, items, acknowledgement))
+    throw Error(
+      "A current passing replay and a review tied to this run are required.",
+    );
+  return {
+    ...contract(result),
+    runId: result.runId,
+    review: acknowledgement,
+    referenceMapping,
+    evidence: result.cases.map((c) => ({
+      fixtureId: c.id,
+      source: c.source,
+      expected: c.expected,
+      output: c.output,
+      passed: c.passed,
+    })),
+  };
 }

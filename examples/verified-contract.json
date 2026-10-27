@@ -17,7 +17,7 @@
     "paid_cents": "integer"
   },
   "verification": {
-    "runAt": "2026-10-27T18:02:23.275Z",
+    "runAt": "2026-10-27T18:24:41.021Z",
     "fixtureIds": [
       "SYN-001",
       "SYN-002",

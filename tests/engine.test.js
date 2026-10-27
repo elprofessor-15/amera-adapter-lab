@@ -116,3 +116,81 @@ test("aggregate amounts never silently exceed safe integer precision", () => {
   assert.equal(result.expectedPaid, null);
   assert.equal(result.passed, 2);
 });
+
+test("changed rules group overlapping field effects without guessing causes", async () => {
+  const { compareRules } = await import("../src/engine.js");
+  const changes = compareRules(fixtures, candidate);
+  assert.equal(changes.length, 4);
+  assert.equal(
+    changes.find((c) => c.key === "moneyEncoding").affected.length,
+    5,
+  );
+  assert.equal(
+    changes.find((c) => c.key === "moneyEncoding").affectedFields,
+    10,
+  );
+  assert.equal(changes.find((c) => c.key === "paidSource").affected.length, 4);
+  assert.equal(compareRules(fixtures, corrected).length, 0);
+});
+test("a changed rule with no observable effect is surfaced as uncovered", async () => {
+  const { compareRules } = await import("../src/engine.js");
+  const changes = compareRules([fixtures[4]], {
+    ...corrected,
+    paidSource: "allowed_cents",
+  });
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].affected.length, 0);
+});
+test("four individual reference-rule corrections converge to the expected outputs", async () => {
+  const { compareRules } = await import("../src/engine.js");
+  let config = { ...candidate };
+  for (const change of compareRules(fixtures, candidate))
+    config[change.key] = change.before;
+  assert.equal(replay(fixtures, config).failed, 0);
+});
+test("review is bound to one passing run, its config and fixture content", async () => {
+  const { acknowledgeRun, canExportReviewed, reviewedContract } =
+    await import("../src/engine.js");
+  const result = replay(fixtures, corrected);
+  const review = acknowledgeRun(
+    result,
+    corrected,
+    fixtures,
+    "Demo reviewer",
+    "Checked date interpretation, paid source, and fixture expectations.",
+  );
+  assert.equal(canExportReviewed(result, corrected, fixtures, review), true);
+  assert.equal(
+    reviewedContract(result, corrected, fixtures, review).review.reviewer,
+    "Demo reviewer",
+  );
+  const handoff = reviewedContract(result, corrected, fixtures, review);
+  assert.deepEqual(handoff.evidence[0].expected, fixtures[0].expected);
+  assert.deepEqual(handoff.evidence[0].source, fixtures[0].source);
+  assert.ok(report(result, review).includes("Demo reviewer"));
+  assert.ok(
+    !report(replay(fixtures, corrected), review).includes(
+      "Reviewer: Demo reviewer",
+    ),
+  );
+  assert.equal(
+    canExportReviewed(replay(fixtures, corrected), corrected, fixtures, review),
+    false,
+  );
+  assert.equal(canExportReviewed(result, candidate, fixtures, review), false);
+  const changed = structuredClone(fixtures);
+  changed[0].note = "Changed fixture description";
+  assert.equal(canExportReviewed(result, corrected, changed, review), false);
+  assert.throws(() =>
+    acknowledgeRun(
+      replay(fixtures, candidate),
+      candidate,
+      fixtures,
+      "Demo",
+      "Reviewed the fixture expectations.",
+    ),
+  );
+  assert.throws(() =>
+    acknowledgeRun(result, corrected, fixtures, "D", "short"),
+  );
+});

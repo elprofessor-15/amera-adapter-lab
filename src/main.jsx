@@ -33,8 +33,13 @@ import {
   validateFixtures,
   contract,
   report,
+  acknowledgeRun,
+  canExportReviewed,
+  reviewedContract,
 } from "./engine";
+import ChangeReview from "./ChangeReview";
 import "./style.css";
+import "./refinement.css";
 const key = "amera-adapter-lab-v1";
 function load() {
   try {
@@ -42,10 +47,14 @@ function load() {
     if (s?.items && s?.config) {
       validateFixtures(s.items);
       normalize(s.items[0].source, s.config);
-      return s;
+      return {
+        ...s,
+        runs: Array.isArray(s.runs) ? s.runs.slice(0, 12) : [],
+        acknowledgements: s.acknowledgements || {},
+      };
     }
   } catch {}
-  return { items: fixtures, config: candidate };
+  return { items: fixtures, config: candidate, runs: [], acknowledgements: {} };
 }
 const usd = (n) =>
   n === null
@@ -65,17 +74,31 @@ function download(name, value, type = "text/plain") {
 }
 function App() {
   const [state, setState] = useState(load),
-    [result, setResult] = useState(() => replay(state.items, state.config)),
-    [page, setPage] = useState("replay"),
+    [result, setResult] = useState(
+      () =>
+        state.runs?.find(
+          (r) => r.fingerprint === signature(state.config, state.items),
+        ) || replay(state.items, state.config),
+    ),
+    [page, setPage] = useState("review"),
     [selected, setSelected] = useState(state.items[0].id),
     [onlyFailures, setOnlyFailures] = useState(false),
     [modal, setModal] = useState(null),
     [text, setText] = useState(""),
     [error, setError] = useState(""),
-    [toast, setToast] = useState("");
+    [toast, setToast] = useState(""),
+    [reviewer, setReviewer] = useState(""),
+    [reviewNote, setReviewNote] = useState("");
   const fresh = result.fingerprint === signature(state.config, state.items),
     current = result.cases.find((c) => c.id === selected) || result.cases[0],
-    eligible = fresh && result.failed === 0;
+    acknowledgement = state.acknowledgements?.[result.runId],
+    passing = fresh && result.failed === 0,
+    eligible = canExportReviewed(
+      result,
+      state.config,
+      state.items,
+      acknowledgement,
+    );
   function persist(next) {
     setState(next);
     localStorage.setItem(key, JSON.stringify(next));
@@ -83,11 +106,20 @@ function App() {
   function update(name, value) {
     persist({ ...state, config: { ...state.config, [name]: value } });
   }
-  function run() {
-    setResult(replay(state.items, state.config));
-    notify(
-      "Replay complete. " + state.items.length + " synthetic fixtures checked.",
-    );
+  function run(config = state.config) {
+    const nextResult = replay(state.items, config);
+    setResult(nextResult);
+    persist({
+      ...state,
+      config,
+      runs: [nextResult, ...(state.runs || [])].slice(0, 12),
+    });
+  }
+  function requestReview() {
+    setReviewer(acknowledgement?.reviewer || "");
+    setReviewNote(acknowledgement?.note || "");
+    setError("");
+    setModal("review");
   }
   function notify(t) {
     setToast(t);
@@ -106,7 +138,9 @@ function App() {
     function onKey(e) {
       if (e.key === "Escape") setModal(null);
       if (e.key === "Tab") {
-        const n = [...dialog.querySelectorAll("button,textarea,a")];
+        const n = [
+          ...dialog.querySelectorAll("button,textarea,a,input,select"),
+        ];
         if (e.shiftKey && document.activeElement === n[0]) {
           e.preventDefault();
           n.at(-1)?.focus();
@@ -130,7 +164,7 @@ function App() {
           href="#"
           onClick={(e) => {
             e.preventDefault();
-            setPage("replay");
+            setPage("review");
           }}
         >
           Amera<span className="brand-dot">.</span>
@@ -139,10 +173,16 @@ function App() {
         <span className="product-name">Adapter Lab</span>
         <nav>
           <button
-            className={page === "replay" ? "selected" : ""}
-            onClick={() => setPage("replay")}
+            className={page === "review" ? "selected" : ""}
+            onClick={() => setPage("review")}
           >
-            Mapping & replay
+            Change review
+          </button>
+          <button
+            className={page === "mapping" ? "selected" : ""}
+            onClick={() => setPage("mapping")}
+          >
+            Mapping rules
           </button>
           <button
             className={page === "fixtures" ? "selected" : ""}
@@ -154,7 +194,7 @@ function App() {
             className={page === "release" ? "selected" : ""}
             onClick={() => setPage("release")}
           >
-            Verification record
+            Run record
           </button>
         </nav>
         <span className="prototype">
@@ -172,47 +212,77 @@ function App() {
             Synthetic data only
           </span>
         </div>
-        <section className="hero">
-          <div>
-            <div className="eyebrow">BUILD CONFIDENCE INTO EVERY MAPPING</div>
-            <h1>
-              {page === "replay" ? (
-                <>
-                  A new format.
-                  <br />
-                  <em>No silent changes.</em>
-                </>
-              ) : page === "fixtures" ? (
-                <>
-                  Small fixtures.
-                  <br />
-                  <em>Specific expectations.</em>
-                </>
-              ) : (
-                <>
-                  The mapping changed.
-                  <br />
-                  <em>Keep the evidence.</em>
-                </>
-              )}
-            </h1>
-          </div>
-          <div className="hero-note">
-            <span className="overline">HARBOR TPA / ADAPTER V2</span>
-            <p>
-              {page === "replay"
-                ? "Replay a mapping change before it reaches a claims workflow. Every difference, down to the source field."
-                : page === "fixtures"
-                  ? "Synthetic source records paired with explicit expected outputs. Test the contract, not a guess."
-                  : "A portable verification record with the configuration, test results, and limits of what was checked."}
-            </p>
-            <span className="local-tag">
-              <span />
-              Local execution · No claims transmitted
-            </span>
-          </div>
-        </section>
-        {page === "replay" && (
+        {page === "review" && (
+          <ChangeReview
+            state={state}
+            result={result}
+            fresh={fresh}
+            onReplay={() => run()}
+            onFix={(name, value) => run({ ...state.config, [name]: value })}
+            onEdit={() => setPage("mapping")}
+            onRelease={() => setPage("release")}
+            onReset={() => run(candidate)}
+            onInspect={(record) =>
+              preview(
+                JSON.stringify(
+                  {
+                    source: record.source,
+                    expected: record.expected,
+                    reference: "Bundled harbor-v1",
+                    candidate: record.output,
+                    trace: record.trace,
+                  },
+                  null,
+                  2,
+                ),
+                "source",
+              )
+            }
+          />
+        )}
+        {page !== "review" && (
+          <section className="hero">
+            <div>
+              <div className="eyebrow">BUILD CONFIDENCE INTO EVERY MAPPING</div>
+              <h1>
+                {page === "mapping" ? (
+                  <>
+                    A new format.
+                    <br />
+                    <em>No silent changes.</em>
+                  </>
+                ) : page === "fixtures" ? (
+                  <>
+                    Small fixtures.
+                    <br />
+                    <em>Specific expectations.</em>
+                  </>
+                ) : (
+                  <>
+                    Review the handoff.
+                    <br />
+                    <em>Keep the evidence.</em>
+                  </>
+                )}
+              </h1>
+            </div>
+            <div className="hero-note">
+              <span className="overline">HARBOR TPA / ADAPTER V2</span>
+              <p>
+                {page === "mapping"
+                  ? "Replay a mapping change before it reaches a claims workflow. Every difference, down to the source field."
+                  : page === "fixtures"
+                    ? "Synthetic source records paired with explicit expected outputs. Test the contract, not a guess."
+                    : "A portable verification record with the configuration, test results, and limits of what was checked."}
+              </p>
+              <span className="local-tag">
+                <span />
+                Local execution · No claims transmitted
+              </span>
+            </div>
+          </section>
+        )}
+        {page === "mapping" && (
           <>
             <section className="adapter-strip">
               <div className="feed-icon">
@@ -234,7 +304,7 @@ function App() {
               >
                 View mapping JSON <ArrowUpRight size={12} />
               </button>
-              <button className="button primary" onClick={run}>
+              <button className="button primary" onClick={() => run()}>
                 <Play size={13} />
                 Run replay
               </button>
@@ -707,11 +777,11 @@ function App() {
             <article className="release-paper">
               <div className="paper-header">
                 <span className="brand small-brand">Amera.</span>
-                <span>ADAPTER VERIFICATION / LOCAL RECORD</span>
+                <span>{result.runId} / LOCAL RECORD</span>
               </div>
               <div className="eyebrow">HARBOR TPA / SYNTHETIC CSV CONTRACT</div>
               <h2>
-                {eligible
+                {passing
                   ? "Verified against the fixtures."
                   : "A mapping needs evidence."}
               </h2>
@@ -720,14 +790,14 @@ function App() {
                   ? "The current mapping was replayed against the selected expected outputs."
                   : "The mapping has changed since the last replay. Run the current configuration before exporting."}
               </p>
-              <div className={"release-status " + (eligible ? "good" : "bad")}>
-                {eligible ? (
+              <div className={"release-status " + (passing ? "good" : "bad")}>
+                {passing ? (
                   <CheckCircle2 size={17} />
                 ) : (
                   <AlertCircle size={17} />
                 )}
                 <strong>
-                  {eligible
+                  {passing
                     ? "Fixture checks passed"
                     : !fresh
                       ? "Replay required"
@@ -791,9 +861,8 @@ function App() {
                 ))}
               </div>
               <div className="paper-limit">
-                Scope: agreement with this finite synthetic fixture set only. No
-                clinical, coverage, payment, EDI, security, or
-                production-readiness determination.
+                Scope: agreement with this synthetic fixture set. Unseen formats
+                and production integration have not been evaluated.
               </div>
             </article>
             <aside className="release-side">
@@ -805,16 +874,63 @@ function App() {
               </h2>
               <p>
                 Export the mapping alongside its verification record. The
-                contract stays locked until the current configuration passes
-                every selected fixture.
+                handoff includes source fixtures, expected outputs, and the
+                review note. Export unlocks after a passing replay and review of
+                this exact run.
               </p>
+              <div
+                className={
+                  "human-review " + (acknowledgement ? "recorded" : "")
+                }
+              >
+                <div>
+                  <CheckCircle2 size={15} />
+                  <strong>
+                    {acknowledgement
+                      ? "Review recorded"
+                      : "One human step remains"}
+                  </strong>
+                </div>
+                {acknowledgement ? (
+                  <>
+                    <p>{acknowledgement.note}</p>
+                    <span>
+                      {acknowledgement.reviewer} ·{" "}
+                      {new Date(acknowledgement.reviewedAt).toLocaleString(
+                        "en-GB",
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <p>
+                    Confirm the fixture expectations and mapping assumptions.
+                    Your note attaches to this run, not future changes.
+                  </p>
+                )}
+                <button
+                  className="button outline wide"
+                  disabled={!passing}
+                  onClick={requestReview}
+                >
+                  {acknowledgement ? "Edit review note" : "Record review note"}
+                </button>
+              </div>
               <button
                 className="button primary wide"
                 disabled={!eligible}
                 onClick={() => {
                   download(
                     "harbor-mapping-contract.json",
-                    JSON.stringify(contract(result), null, 2),
+                    JSON.stringify(
+                      reviewedContract(
+                        result,
+                        state.config,
+                        state.items,
+                        acknowledgement,
+                      ),
+                      null,
+                      2,
+                    ),
                     "application/json",
                   );
                   notify("Verified mapping contract export prepared");
@@ -828,7 +944,7 @@ function App() {
                 onClick={() => {
                   download(
                     "harbor-replay-report.md",
-                    report(result),
+                    report(result, acknowledgement),
                     "text/markdown",
                   );
                   notify("Replay report export prepared");
@@ -839,7 +955,9 @@ function App() {
               </button>
               <button
                 className="text-button"
-                onClick={() => preview(report(result), "report")}
+                onClick={() =>
+                  preview(report(result, acknowledgement), "report")
+                }
               >
                 Inspect exact report text <ArrowUpRight size={12} />
               </button>
@@ -863,6 +981,68 @@ function App() {
             </aside>
           </section>
         )}
+        {page === "release" && (
+          <section className="run-history">
+            <div className="history-heading">
+              <span className="eyebrow">LOCAL REPLAY HISTORY</span>
+              <h2>Replay history</h2>
+              <p>
+                Up to 12 replay snapshots are retained on this browser. Prior
+                results are read-only.
+              </p>
+            </div>
+            <details className="history-disclosure">
+              <summary>
+                Inspect saved replay snapshots ({(state.runs || []).length})
+                <ChevronDown size={14} />
+              </summary>
+              <div className="history-table">
+                {(state.runs || []).length ? (
+                  (state.runs || []).map((r) => (
+                    <button
+                      key={r.runId}
+                      onClick={() =>
+                        preview(
+                          JSON.stringify(
+                            {
+                              replay: r,
+                              review: state.acknowledgements?.[r.runId] || null,
+                            },
+                            null,
+                            2,
+                          ),
+                          "history",
+                        )
+                      }
+                    >
+                      <span
+                        className={"history-dot " + (r.failed ? "warning" : "")}
+                      />
+                      <code>{r.runId}</code>
+                      <span>
+                        {r.passed}/{r.total} passed
+                      </span>
+                      <span>{r.changedFields} field differences</span>
+                      <time>
+                        {new Date(r.runAt).toLocaleTimeString("en-GB")}
+                      </time>
+                      <span>
+                        {state.acknowledgements?.[r.runId]
+                          ? "Reviewed"
+                          : "No review note"}
+                      </span>
+                      <ArrowUpRight size={13} />
+                    </button>
+                  ))
+                ) : (
+                  <p className="history-empty">
+                    Run a replay to save its configuration and outputs here.
+                  </p>
+                )}
+              </div>
+            </details>
+          </section>
+        )}
         <footer>
           <span>AMERA / ADAPTER LAB</span>
           <p>Built by C Abhineeth · Independent concept · Synthetic fixtures</p>
@@ -878,21 +1058,25 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-label={
-              modal === "fixtures"
-                ? "Edit synthetic fixtures"
-                : modal === "about"
-                  ? "About this prototype"
-                  : "Inspect data"
+              modal === "review"
+                ? "Review this run"
+                : modal === "fixtures"
+                  ? "Edit synthetic fixtures"
+                  : modal === "about"
+                    ? "About this prototype"
+                    : "Inspect data"
             }
             onClick={(e) => e.stopPropagation()}
           >
             <div className="dialog-top">
               <span className="overline">
-                {modal === "fixtures"
-                  ? "SYNTHETIC FIXTURE EDITOR"
-                  : modal === "about"
-                    ? "METHOD & SCOPE"
-                    : "LOCAL ARTIFACT PREVIEW"}
+                {modal === "review"
+                  ? "REPLAY REVIEW / LOCAL NOTE"
+                  : modal === "fixtures"
+                    ? "SYNTHETIC FIXTURE EDITOR"
+                    : modal === "about"
+                      ? "METHOD & SCOPE"
+                      : "LOCAL ARTIFACT PREVIEW"}
               </span>
               <button
                 className="icon-button"
@@ -902,7 +1086,74 @@ function App() {
                 <X size={20} />
               </button>
             </div>
-            {modal === "about" ? (
+            {modal === "review" ? (
+              <>
+                <h2>Review this run.</h2>
+                <p>
+                  Confirm the expected values and the mapping assumptions for{" "}
+                  <code>{result.runId}</code>. This is an engineering note about
+                  synthetic fixture agreement.
+                </p>
+                <form
+                  className="review-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    try {
+                      const record = acknowledgeRun(
+                        result,
+                        state.config,
+                        state.items,
+                        reviewer,
+                        reviewNote,
+                      );
+                      persist({
+                        ...state,
+                        acknowledgements: {
+                          ...state.acknowledgements,
+                          [result.runId]: record,
+                        },
+                      });
+                      setModal(null);
+                      notify("Review saved for " + result.runId);
+                    } catch (err) {
+                      setError(err.message);
+                    }
+                  }}
+                >
+                  <label>
+                    Reviewer name
+                    <input
+                      required
+                      value={reviewer}
+                      onChange={(e) => setReviewer(e.target.value)}
+                      maxLength={100}
+                    />
+                  </label>
+                  <label>
+                    What did you check?
+                    <textarea
+                      required
+                      value={reviewNote}
+                      onChange={(e) => setReviewNote(e.target.value)}
+                      placeholder="Confirm the reference, source field meaning, and fixture expectations you checked."
+                      maxLength={2000}
+                    />
+                  </label>
+                  <div className="dialog-note">
+                    This note does not approve claims, deploy an adapter, or
+                    validate untested payer data.
+                  </div>
+                  {error && (
+                    <p role="alert" className="error">
+                      {error}
+                    </p>
+                  )}
+                  <button className="button primary" type="submit">
+                    Save review for this run <Check size={13} />
+                  </button>
+                </form>
+              </>
+            ) : modal === "about" ? (
               <>
                 <h2>
                   Test the mapping.
